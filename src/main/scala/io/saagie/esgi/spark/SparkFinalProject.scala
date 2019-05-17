@@ -1,6 +1,11 @@
 package io.saagie.esgi.spark
 
+case class Beer(id: String, name: String, brewery_id: String, state: String, country: String, style: String, availability: String, abv: String, notes: String, retired: String)
+case class Brewery(id: String, name: String, city: String, state: String, country: String, notes: String , types: String)
+case class Review(beer_id: String, username: String, date: String, text: String, look: String, smell: String, taste: String, feel: String, overall: String, score: Double)
+
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.types.DoubleType
 
 object SparkFinalProject {
 
@@ -8,27 +13,40 @@ object SparkFinalProject {
 
     val spark = SparkSession
       .builder
-      .appName(getClass.getName)
+      .appName(getClass.getSimpleName)
       .getOrCreate()
 
-    val beers = spark.read.option("header", true).csv("data/beers.csv")
+    import spark.implicits._
 
-    beers.printSchema()
-    beers.count()
-
-    /*val reviews = spark.read.option("header", true).csv("data/reviews.csv")
-    reviews.count()
-    reviews.printSchema()
-
-    val breweries = spark.read.option("header", true).csv("data/breweries.csv")
-    breweries.count()
-    breweries.printSchema()*/
+    val beers = spark.read.option("header", true).csv("data/beers.csv").as[Beer]
+    val reviews = spark.read.option("header", true).csv("data/reviews.csv").withColumn("score", $"score".cast(DoubleType)).as[Review]
+    val breweries = spark.read.option("header", true).csv("data/breweries.csv").as[Brewery]
 
     // Afficher dans les logs la bière qui a le meilleur score
+    val beersRanking = beers
+      .join(reviews, beers("id") === reviews("beer_id"), "inner")
+      .groupBy("beer_id")
+      .avg("score").withColumnRenamed("avg(score)", "score_avg")
+      .orderBy($"score_avg".desc)
+
+    beersRanking.show(1)
 
     // Afficher dans les logs la brasserie qui a le meilleur score en moyenne sur toutes ses bières
+    val breweriesRanking = beers
+      .join(beersRanking, beers("id") === beersRanking("beer_id"), "left")
+      .groupBy("brewery_id")
+      .avg("score_avg").withColumnRenamed("avg(score_avg)", "brewery_score")
+      .orderBy($"brewery_score".desc)
+
+    breweriesRanking.show(1)
 
     // Afficher les 10 pays qui ont le plus de brasseries de type Beer-to-go
+    val top10 = breweries
+      .filter(breweries("types").contains("Beer-to-go"))
+      .groupBy("country")
+      .count()
+      .orderBy($"count".desc)
+      .show(10)
 
     /*
       En vous basant sur le text des reviews, donner le mot qui revient le plus (avec le plus d'occurrences) dans les
