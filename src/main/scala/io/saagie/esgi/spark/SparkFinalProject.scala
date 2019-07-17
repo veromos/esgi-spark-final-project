@@ -3,8 +3,9 @@ package io.saagie.esgi.spark
 case class Beer(id: String, name: String, brewery_id: String, state: String, country: String, style: String, availability: String, abv: String, notes: String, retired: String)
 case class Brewery(id: String, name: String, city: String, state: String, country: String, notes: String , types: String)
 case class Review(beer_id: String, username: String, date: String, text: String, look: String, smell: String, taste: String, feel: String, overall: String, score: Double)
+case class Stopword(id: String, word: String)
 
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{Dataset, Row, SparkSession}
 import org.apache.spark.sql.types.DoubleType
 
 object SparkFinalProject {
@@ -18,9 +19,10 @@ object SparkFinalProject {
 
     import spark.implicits._
 
-    val beers = spark.read.option("header", true).csv("data/beers.csv").as[Beer]
-    val reviews = spark.read.option("header", true).csv("data/reviews.csv").withColumn("score", $"score".cast(DoubleType)).as[Review]
-    val breweries = spark.read.option("header", true).csv("data/breweries.csv").as[Brewery]
+    val beers: Dataset[Beer] = spark.read.option("header", true).csv("data/beers.csv").as[Beer]
+    val reviews: Dataset[Review] = spark.read.option("header", true).csv("data/reviews.csv").withColumn("score", $"score".cast(DoubleType)).as[Review]
+    val breweries: Dataset[Brewery] = spark.read.option("header", true).csv("data/breweries.csv").as[Brewery]
+    val stopwords: Dataset[Stopword] = spark.read.option("header", true).option("delimiter", ";").csv("data/stopwords.csv").as[Stopword]
 
     // Afficher dans les logs la bière qui a le meilleur score
     val beersRanking = beers
@@ -54,10 +56,22 @@ object SparkFinalProject {
       Vous devrez vous assurer de supprimer de cette liste les “stop words” dont une liste est disponible ici :
       https://www.textfixer.com/tutorials/common-english-words.txt
     */
+    val textDataset = reviews
+      .join(beers, beers("id") === reviews("beer_id"), "left")
+      .filter(beers("style").contains("IPA"))
+      .select(reviews("text"))
+      .as[String]
+
+    val top10Words = textDataset
+      .flatMap(_.toLowerCase.trim.split(" "))
+      .groupBy("Value")
+      .count()
+      .orderBy($"count".desc)
+      .join(stopwords, $"Value" === stopwords("word"), "left_anti")
+      .show(10)
 
     println(s"Sleeping for ${args(0)}")
 
     Thread.sleep(args(0).toLong)
   }
-
 }
