@@ -24,4 +24,5 @@ assemblyMergeStrategy in assembly := {
 }
 
 test in assembly := {}
+mainClass in assembly := Some("io.saagie.esgi.spark")
 parallelExecution in Test := false
