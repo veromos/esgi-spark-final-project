@@ -19,17 +19,17 @@ object SparkFinalProject {
 
     import spark.implicits._
 
-    val beers: Dataset[Beer] = spark.read.option("header", true).csv("data/beers.csv").as[Beer]
-    val reviews: Dataset[Review] = spark.read.option("header", true).csv("data/reviews.csv").withColumn("score", $"score".cast(DoubleType)).as[Review]
-    val breweries: Dataset[Brewery] = spark.read.option("header", true).csv("data/breweries.csv").as[Brewery]
-    val stopwords: Dataset[Stopword] = spark.read.option("header", true).option("delimiter", ";").csv("data/stopwords.csv").as[Stopword]
+    val beers: Dataset[Beer] = spark.read.option("header", true).csv("hdfs:/data/esgi-spark/final-project/beers.csv").as[Beer]
+    val reviews: Dataset[Review] = spark.read.option("header", true).csv("hdfs:/data/esgi-spark/final-project/reviews.csv").withColumn("score", $"score".cast(DoubleType)).as[Review]
+    val breweries: Dataset[Brewery] = spark.read.option("header", true).csv("hdfs:/data/esgi-spark/final-project/breweries.csv").as[Brewery]
+    val stopwords: Dataset[Stopword] = spark.read.option("header", true).option("delimiter", ";").csv("hdfs:/data/esgi-spark/final-project/stopwords.csv").as[Stopword]
 
     // Afficher dans les logs la bière qui a le meilleur score
     val beersRanking = beers
       .join(reviews, beers("id") === reviews("beer_id"), "inner")
       .groupBy("beer_id")
-      .avg("score").withColumnRenamed("avg(score)", "score_avg")
-      .orderBy($"score_avg".desc)
+      .avg("score")
+      .orderBy($"avg(score)".desc)
 
     beersRanking.show(1)
 
@@ -37,18 +37,19 @@ object SparkFinalProject {
     val breweriesRanking = beers
       .join(beersRanking, beers("id") === beersRanking("beer_id"), "left")
       .groupBy("brewery_id")
-      .avg("score_avg").withColumnRenamed("avg(score_avg)", "brewery_score")
-      .orderBy($"brewery_score".desc)
+      .avg("avg(score)")
+      .orderBy($"avg(avg(score))".desc)
 
     breweriesRanking.show(1)
 
     // Afficher les 10 pays qui ont le plus de brasseries de type Beer-to-go
-    val top10 = breweries
+    val topCountries  = breweries
       .filter(breweries("types").contains("Beer-to-go"))
       .groupBy("country")
       .count()
       .orderBy($"count".desc)
-      .show(10)
+
+    topCountries.show(10)
 
     /*
       En vous basant sur le text des reviews, donner le mot qui revient le plus (avec le plus d'occurrences) dans les
@@ -61,14 +62,15 @@ object SparkFinalProject {
       .filter(beers("style").contains("IPA"))
       .select(reviews("text"))
       .as[String]
-
-    val top10Words = textDataset
-      .flatMap(_.toLowerCase.trim.split(" "))
-      .groupBy("Value")
-      .count()
-      .orderBy($"count".desc)
-      .join(stopwords, $"Value" === stopwords("word"), "left_anti")
-      .show(10)
+      .flatMap(_.toLowerCase.replaceAll("[^a-z' ]", "").split(" "))
+      .filter(value => !value.isEmpty)
+      .map(word=>(word,1))
+      .groupByKey(_._1)
+      .reduceGroups((a, b) => (a._1, a._2 + b._2))
+      .map(_._2)
+      .orderBy($"_2".desc)
+      .join(stopwords, $"_1" === stopwords("word"), "left_anti")
+      .show(1)
 
     println(s"Sleeping for ${args(0)}")
 
